@@ -15,6 +15,12 @@ GP := /gopath
 GOPATH ?= "$$HOME/go"
 MAIN_PKG := github.com/atlassian/smith/cmd/smith
 
+setup-minikube-ci:
+	curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+	chmod +x minikube
+	./minikube version
+	./minikube config set WantReportErrorPrompt false
+
 setup: setup-ci
 	go get -u golang.org/x/tools/cmd/goimports
 

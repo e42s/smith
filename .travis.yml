@@ -12,7 +12,9 @@ os:
   - linux
 
 before_install:
+  - make setup-minikube-ci
   - go get github.com/mattn/goveralls
+  - ./minikube start --show-libmachine-logs --vm-driver=none --use-vendored-driver
 
 install:
   - make setup-ci
@@ -20,4 +22,5 @@ install:
 script:
   - make build-all-race
   - make test-race
+  - make minikube-test
   - make coveralls
