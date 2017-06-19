@@ -1,0 +1,68 @@
+apiVersion: smith.atlassian.com/v1
+kind: Bundle
+metadata:
+  name: app1-bundle
+spec:
+  resources:
+  - name: instance1
+    spec:
+      apiVersion: servicecatalog.k8s.io/v1alpha1
+      kind: Instance
+      metadata:
+        name: postgres-instance
+      spec:
+        serviceClassName: user-provided-service
+        planName: default
+        parameters:
+          credentials:
+            token: "123"
+  - name: binding1
+    dependsOn:
+    - instance1
+    spec:
+      apiVersion: servicecatalog.k8s.io/v1alpha1
+      kind: Binding
+      metadata:
+        name: postgres-binding
+      spec:
+        instanceRef:
+          name: "{{instance1#spec.metadata.name}}"
+        secretName: secret1
+  - name: podpreset1
+    dependsOn:
+    - binding1
+    spec:
+      kind: PodPreset
+      apiVersion: settings.k8s.io/v1alpha1
+      metadata:
+        name: inject-postgres
+      spec:
+        selector:
+          matchLabels:
+            app: app1
+        env:
+          - name: PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "{{binding1#spec.secretName}}"
+                key: "token"
+  - name: deploy1
+    dependsOn:
+    - binding1
+    spec:
+      apiVersion: extensions/v1beta1
+      kind: Deployment
+      metadata:
+        name: nginx-deployment
+      spec:
+        replicas: 3
+        template:
+          metadata:
+            labels:
+              app: app1
+          spec:
+            containers:
+            - name: nginx
+              image: nginxdemos/hello
+              ports:
+              - containerPort: 80
