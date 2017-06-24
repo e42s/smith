@@ -14,7 +14,7 @@ os:
 before_install:
   - make setup-minikube-ci
   - go get github.com/mattn/goveralls
-  - ./minikube start --vm-driver=none --use-vendored-driver --kubernetes-version=v1.7.0-alpha.2
+  - ./minikube start --vm-driver=none --v=3 --use-vendored-driver --kubernetes-version=v1.7.0-alpha.2
 
 install:
   - make setup-ci
