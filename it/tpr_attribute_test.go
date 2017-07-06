@@ -1,6 +1,4 @@
-// +build integration
-
-package integration_tests
+package it
 
 import (
 	"context"
@@ -47,12 +45,12 @@ func TestTprAttribute(t *testing.T) {
 			},
 		},
 	}
-	setupApp(t, bundle, false, true, testTprAttribute, sleeper)
+	SetupApp(t, bundle, false, true, testTprAttribute, sleeper)
 }
 
-func testTprAttribute(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...interface{}) {
+func testTprAttribute(t *testing.T, ctxTest context.Context, cfg *Config, args ...interface{}) {
 	sleeper := args[0].(*tprattribute.Sleeper)
-	sClient, err := tprattribute.GetSleeperTprClient(cfg.config, sleeperScheme())
+	sClient, err := tprattribute.GetSleeperTprClient(cfg.Config, sleeperScheme())
 	require.NoError(t, err)
 
 	stgr := stager.New()
@@ -60,7 +58,7 @@ func testTprAttribute(t *testing.T, ctxTest context.Context, cfg *itConfig, args
 	stage := stgr.NextStage()
 	stage.StartWithContext(func(ctx context.Context) {
 		apl := tprattribute.App{
-			RestConfig: cfg.config,
+			RestConfig: cfg.Config,
 		}
 		if e := apl.Run(ctx); e != context.Canceled && e != context.DeadlineExceeded {
 			assert.NoError(t, e)
@@ -70,19 +68,19 @@ func testTprAttribute(t *testing.T, ctxTest context.Context, cfg *itConfig, args
 	ctxTimeout, cancel := context.WithTimeout(ctxTest, time.Duration(sleeper.Spec.SleepFor+3)*time.Second)
 	defer cancel()
 
-	assertBundle(t, ctxTimeout, cfg.store, cfg.namespace, cfg.bundle, "")
+	AssertBundle(t, ctxTimeout, cfg.Store, cfg.Namespace, cfg.Bundle, "")
 
 	var sleeperObj tprattribute.Sleeper
 	require.NoError(t, sClient.Get().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(tprattribute.SleeperResourcePath).
 		Name(sleeper.Name).
 		Do().
 		Into(&sleeperObj))
 
 	assert.Equal(t, map[string]string{
-		smith.BundleNameLabel: cfg.bundle.Name,
+		smith.BundleNameLabel: cfg.Bundle.Name,
 	}, sleeperObj.Labels)
 	assert.Equal(t, tprattribute.Awake, sleeperObj.Status.State)
 }

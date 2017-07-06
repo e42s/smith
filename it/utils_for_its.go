@@ -1,4 +1,4 @@
-package integration_tests
+package it
 
 import (
 	"context"
@@ -37,26 +37,26 @@ const (
 	serviceCatalogUrlEnvParam = "SERVICE_CATALOG_URL"
 )
 
-type testFunc func(*testing.T, context.Context, *itConfig, ...interface{})
+type testFunc func(*testing.T, context.Context, *Config, ...interface{})
 
-type itConfig struct {
-	t             *testing.T
-	namespace     string
-	bundle        *smith.Bundle
-	createdBundle *smith.Bundle
-	config        *rest.Config
-	clientset     *kubernetes.Clientset
-	sc            smith.SmartClient
-	bundleClient  *rest.RESTClient
-	store         *store.Multi
+type Config struct {
+	T             *testing.T
+	Namespace     string
+	Bundle        *smith.Bundle
+	CreatedBundle *smith.Bundle
+	Config        *rest.Config
+	Clientset     *kubernetes.Clientset
+	Sc            smith.SmartClient
+	BundleClient  *rest.RESTClient
+	Store         *store.Multi
 	toCleanup     []runtime.Object
 }
 
-func (cfg *itConfig) cleanupLater(obj ...runtime.Object) {
+func (cfg *Config) cleanupLater(obj ...runtime.Object) {
 	cfg.toCleanup = append(cfg.toCleanup, obj...)
 }
 
-func (cfg *itConfig) cleanup() {
+func (cfg *Config) cleanup() {
 	for _, obj := range cfg.toCleanup {
 		cfg.deleteObject(obj)
 		bundle, ok := obj.(*smith.Bundle)
@@ -66,20 +66,20 @@ func (cfg *itConfig) cleanup() {
 				continue
 			}
 			bundle = new(smith.Bundle)
-			if !assert.NoError(cfg.t, unstructured_conversion.DefaultConverter.FromUnstructured(u.Object, bundle)) {
+			if !assert.NoError(cfg.T, unstructured_conversion.DefaultConverter.FromUnstructured(u.Object, bundle)) {
 				continue
 			}
 		}
 		cfg.cleanupBundle(bundle)
 	}
 }
-func (cfg *itConfig) cleanupBundle(bundle *smith.Bundle) {
+func (cfg *Config) cleanupBundle(bundle *smith.Bundle) {
 	for _, resource := range bundle.Spec.Resources {
 		cfg.deleteObject(resource.Spec)
 	}
 }
 
-func (cfg *itConfig) deleteObject(obj runtime.Object) {
+func (cfg *Config) deleteObject(obj runtime.Object) {
 	m := obj.(meta_v1.Object)
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	if gvk.Empty() {
@@ -93,13 +93,13 @@ func (cfg *itConfig) deleteObject(obj runtime.Object) {
 		case *tprattribute.Sleeper:
 			gvk = tprattribute.SleeperGVK
 		default:
-			assert.Fail(cfg.t, "Unhandled object kind", "%T", obj)
+			assert.Fail(cfg.T, "Unhandled object kind", "%T", obj)
 			return
 		}
 	}
-	cfg.t.Logf("Deleting object %q", m.GetName())
-	objClient, err := cfg.sc.ForGVK(gvk, cfg.namespace)
-	if !assert.NoError(cfg.t, err) {
+	cfg.T.Logf("Deleting object %q", m.GetName())
+	objClient, err := cfg.Sc.ForGVK(gvk, cfg.Namespace)
+	if !assert.NoError(cfg.T, err) {
 		return
 	}
 	policy := meta_v1.DeletePropagationForeground
@@ -107,17 +107,17 @@ func (cfg *itConfig) deleteObject(obj runtime.Object) {
 		PropagationPolicy: &policy,
 	})
 	if !api_errors.IsNotFound(err) {
-		assert.NoError(cfg.t, err)
+		assert.NoError(cfg.T, err)
 	}
 }
 
-func (cfg *itConfig) createObject(ctxTest context.Context, obj, res runtime.Object, resourcePath string, client *rest.RESTClient) {
+func (cfg *Config) createObject(ctxTest context.Context, obj, res runtime.Object, resourcePath string, client *rest.RESTClient) {
 	metaObj := obj.(meta_v1.Object)
 
-	cfg.t.Logf("Creating a new object %s/%s of kind %s", cfg.namespace, metaObj.GetName(), obj.GetObjectKind().GroupVersionKind().Kind)
-	require.NoError(cfg.t, client.Post().
+	cfg.T.Logf("Creating a new object %s/%s of kind %s", cfg.Namespace, metaObj.GetName(), obj.GetObjectKind().GroupVersionKind().Kind)
+	require.NoError(cfg.T, client.Post().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(resourcePath).
 		Body(obj).
 		Do().
@@ -190,7 +190,7 @@ func testSetup(t *testing.T) (*rest.Config, *kubernetes.Clientset, *rest.RESTCli
 	return config, clientset, bundleClient
 }
 
-func setupApp(t *testing.T, bundle *smith.Bundle, serviceCatalog, createBundle bool, test testFunc, args ...interface{}) {
+func SetupApp(t *testing.T, bundle *smith.Bundle, serviceCatalog, createBundle bool, test testFunc, args ...interface{}) {
 	config, clientset, bundleClient := testSetup(t)
 	var scConfig *rest.Config
 	var scClient scClientset.Interface
@@ -210,15 +210,15 @@ func setupApp(t *testing.T, bundle *smith.Bundle, serviceCatalog, createBundle b
 	require.NoError(t, err)
 
 	multiStore := store.NewMulti(scheme.DeepCopy)
-	cfg := &itConfig{
-		t:            t,
-		namespace:    useNamespace,
-		bundle:       bundle,
-		config:       config,
-		clientset:    clientset,
-		sc:           sc,
-		bundleClient: bundleClient,
-		store:        multiStore,
+	cfg := &Config{
+		T:            t,
+		Namespace:    useNamespace,
+		Bundle:       bundle,
+		Config:       config,
+		Clientset:    clientset,
+		Sc:           sc,
+		BundleClient: bundleClient,
+		Store:        multiStore,
 	}
 	defer cfg.cleanup()
 
@@ -274,7 +274,7 @@ func setupApp(t *testing.T, bundle *smith.Bundle, serviceCatalog, createBundle b
 		time.Sleep(500 * time.Millisecond) // Wait until the app starts and creates the Bundle TPR
 		res := &smith.Bundle{}
 		cfg.createObject(ctxTest, bundle, res, smith.BundleResourcePath, bundleClient)
-		cfg.createdBundle = res
+		cfg.CreatedBundle = res
 	}
 
 	bundleInf := bundleInformer(bundleClient, useNamespace)
@@ -284,7 +284,7 @@ func setupApp(t *testing.T, bundle *smith.Bundle, serviceCatalog, createBundle b
 	test(t, ctxTest, cfg, args...)
 }
 
-func assertBundle(t *testing.T, ctx context.Context, store *store.Multi, namespace string, bundle *smith.Bundle, resourceVersions ...string) *smith.Bundle {
+func AssertBundle(t *testing.T, ctx context.Context, store *store.Multi, namespace string, bundle *smith.Bundle, resourceVersions ...string) *smith.Bundle {
 	obj, err := store.AwaitObjectCondition(ctx, smith.BundleGVK, namespace, bundle.Name, isBundleReadyAndNewer(resourceVersions...))
 	require.NoError(t, err)
 	bundleRes := obj.(*smith.Bundle)
@@ -309,10 +309,10 @@ func assertBundle(t *testing.T, ctx context.Context, store *store.Multi, namespa
 	return bundleRes
 }
 
-func assertBundleTimeout(t *testing.T, ctx context.Context, store *store.Multi, namespace string, bundle *smith.Bundle, resourceVersion ...string) *smith.Bundle {
+func AssertBundleTimeout(t *testing.T, ctx context.Context, store *store.Multi, namespace string, bundle *smith.Bundle, resourceVersion ...string) *smith.Bundle {
 	ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return assertBundle(t, ctxTimeout, store, namespace, bundle, resourceVersion...)
+	return AssertBundle(t, ctxTimeout, store, namespace, bundle, resourceVersion...)
 }
 
 // noCopy is a noop implementation of DeepCopy.

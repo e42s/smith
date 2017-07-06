@@ -1,6 +1,4 @@
-// +build integration
-
-package integration_tests
+package it
 
 import (
 	"context"
@@ -64,16 +62,16 @@ func TestResourceDeletion(t *testing.T) {
 			},
 		},
 	}
-	setupApp(t, bundle, false, false, testResourceDeletion, cm, sleeper)
+	SetupApp(t, bundle, false, false, testResourceDeletion, cm, sleeper)
 }
 
-func testResourceDeletion(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...interface{}) {
+func testResourceDeletion(t *testing.T, ctxTest context.Context, cfg *Config, args ...interface{}) {
 	stgr := stager.New()
 	defer stgr.Shutdown()
 	stage := stgr.NextStage()
 	stage.StartWithContext(func(ctx context.Context) {
 		apl := tprattribute.App{
-			RestConfig: cfg.config,
+			RestConfig: cfg.Config,
 		}
 		if e := apl.Run(ctx); e != context.Canceled && e != context.DeadlineExceeded {
 			assert.NoError(t, e)
@@ -83,8 +81,8 @@ func testResourceDeletion(t *testing.T, ctxTest context.Context, cfg *itConfig, 
 	cm := args[0].(*api_v1.ConfigMap)
 	sleeper := args[1].(*tprattribute.Sleeper)
 
-	cmClient := cfg.clientset.CoreV1().ConfigMaps(cfg.namespace)
-	sClient, err := tprattribute.GetSleeperTprClient(cfg.config, sleeperScheme())
+	cmClient := cfg.Clientset.CoreV1().ConfigMaps(cfg.Namespace)
+	sClient, err := tprattribute.GetSleeperTprClient(cfg.Config, sleeperScheme())
 	require.NoError(t, err)
 
 	// Create orphaned ConfigMap
@@ -96,7 +94,7 @@ func testResourceDeletion(t *testing.T, ctxTest context.Context, cfg *itConfig, 
 	sleeperActual := &tprattribute.Sleeper{}
 	err = sClient.Post().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(tprattribute.SleeperResourcePath).
 		Body(sleeper).
 		Do().
@@ -106,13 +104,13 @@ func testResourceDeletion(t *testing.T, ctxTest context.Context, cfg *itConfig, 
 
 	// Create Bundle with same resources
 	bundleActual := &smith.Bundle{}
-	cfg.createObject(ctxTest, cfg.bundle, bundleActual, smith.BundleResourcePath, cfg.bundleClient)
-	cfg.createdBundle = bundleActual
+	cfg.createObject(ctxTest, cfg.Bundle, bundleActual, smith.BundleResourcePath, cfg.BundleClient)
+	cfg.CreatedBundle = bundleActual
 
 	time.Sleep(1 * time.Second) // TODO this should be removed once race with tpr informer is fixed "no informer for tpr.atlassian.com/v1, Kind=Sleeper is registered"
 
 	// Bundle should be in Error=true state
-	obj, err := cfg.store.AwaitObjectCondition(ctxTest, smith.BundleGVK, cfg.namespace, cfg.bundle.Name, isBundleError)
+	obj, err := cfg.Store.AwaitObjectCondition(ctxTest, smith.BundleGVK, cfg.Namespace, cfg.Bundle.Name, isBundleError)
 	require.NoError(t, err)
 	bundleActual = obj.(*smith.Bundle)
 
@@ -144,7 +142,7 @@ func testResourceDeletion(t *testing.T, ctxTest context.Context, cfg *itConfig, 
 
 	err = sClient.Delete().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(tprattribute.SleeperResourcePath).
 		Name(sleeperActual.Name).
 		Body(&meta_v1.DeleteOptions{
@@ -157,7 +155,7 @@ func testResourceDeletion(t *testing.T, ctxTest context.Context, cfg *itConfig, 
 	require.NoError(t, err)
 
 	// Bundle should reach Ready=true state
-	assertBundle(t, ctxTest, cfg.store, cfg.namespace, cfg.bundle)
+	AssertBundle(t, ctxTest, cfg.Store, cfg.Namespace, cfg.Bundle)
 
 	// ConfigMap should exist by now
 	cmActual, err = cmClient.Get(cm.Name, meta_v1.GetOptions{})
@@ -165,7 +163,7 @@ func testResourceDeletion(t *testing.T, ctxTest context.Context, cfg *itConfig, 
 
 	// Sleeper should have BlockOwnerDeletion updated
 	err = sClient.Get().
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(tprattribute.SleeperResourcePath).
 		Name(sleeperActual.Name).
 		Do().

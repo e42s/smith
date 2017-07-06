@@ -17,33 +17,61 @@ MAIN_PKG := github.com/atlassian/smith/cmd/smith
 
 setup: setup-ci
 	go get -u golang.org/x/tools/cmd/goimports
+	go get -u github.com/alecthomas/gometalinter
+	gometalinter --install
 
 setup-ci:
 	go get -u github.com/Masterminds/glide
-	go get -u github.com/alecthomas/gometalinter
-	gometalinter --install
 	glide install --strip-vendor
+	go get -u github.com/bazelbuild/rules_go/go/tools/gazelle/gazelle
 
-build: fmt
-	go build -i -o build/bin/$(ARCH)/$(BINARY_NAME) $(GOBUILD_VERSION_ARGS) $(MAIN_PKG)
+update-bazel:
+	gazelle -external vendored
 
-build-race: fmt
-	go build -i -race -o build/bin/$(ARCH)/$(BINARY_NAME) $(GOBUILD_VERSION_ARGS) $(MAIN_PKG)
+build: fmt update-bazel
+	bazel build //cmd/smith:smith
+
+build-race: fmt update-bazel
+	bazel build //cmd/smith:smith-race
 
 build-all: fmt
-	go install $$(glide nv | grep -v integration_tests)
-	go test -i -tags=integration,integration_sc $$(glide nv)
+	go install $$(glide nv | grep -v "/it/")
+	go test -i $$(glide nv)
 
 build-all-race: fmt
-	go install -race $$(glide nv | grep -v integration_tests)
-	go test -i -race -tags=integration,integration_sc $$(glide nv)
+	go install -race $$(glide nv | grep -v "/it/")
+	go test -i -race $$(glide nv)
 
 fmt:
 	gofmt -w=true -s $$(find . -type f -name '*.go' -not -path "./vendor/*")
 	goimports -w=true -d $$(find . -type f -name '*.go' -not -path "./vendor/*")
 
-minikube-test: fmt
-	go test -i -tags=integration -race -v ./integration_tests
+minikube-test: fmt update-bazel
+	bazel test \
+		--test_output=all \
+		--test_env=KUBE_PATCH_CONVERSION_DETECTOR=true \
+		--test_env=KUBE_CACHE_MUTATION_DETECTOR=true \
+		--test_env=KUBERNETES_SERVICE_HOST="$$(minikube ip)" \
+		--test_env=KUBERNETES_SERVICE_PORT=8443 \
+		--test_env=KUBERNETES_CA_PATH="$$HOME/.minikube/ca.crt" \
+		--test_env=KUBERNETES_CLIENT_CERT="$$HOME/.minikube/apiserver.crt" \
+		--test_env=KUBERNETES_CLIENT_KEY="$$HOME/.minikube/apiserver.key" \
+		//it:go_default_test
+
+minikube-test-sc: fmt update-bazel
+	bazel test \
+		--test_output=all \
+		--test_env=KUBE_PATCH_CONVERSION_DETECTOR=true \
+		--test_env=KUBE_CACHE_MUTATION_DETECTOR=true \
+		--test_env=KUBERNETES_SERVICE_HOST="$$(minikube ip)" \
+		--test_env=KUBERNETES_SERVICE_PORT=8443 \
+		--test_env=KUBERNETES_CA_PATH="$$HOME/.minikube/ca.crt" \
+		--test_env=KUBERNETES_CLIENT_CERT="$$HOME/.minikube/apiserver.crt" \
+		--test_env=KUBERNETES_CLIENT_KEY="$$HOME/.minikube/apiserver.key" \
+		--test_env=SERVICE_CATALOG_URL="http://$$(minikube ip):30080" \
+		//it/svc_cat:go_default_test
+
+minikube-run: fmt update-bazel
 	KUBE_PATCH_CONVERSION_DETECTOR=true \
 	KUBE_CACHE_MUTATION_DETECTOR=true \
 	KUBERNETES_SERVICE_HOST="$$(minikube ip)" \
@@ -51,10 +79,9 @@ minikube-test: fmt
 	KUBERNETES_CA_PATH="$$HOME/.minikube/ca.crt" \
 	KUBERNETES_CLIENT_CERT="$$HOME/.minikube/apiserver.crt" \
 	KUBERNETES_CLIENT_KEY="$$HOME/.minikube/apiserver.key" \
-	go test -tags=integration -race -v ./integration_tests
+	bazel run //cmd/smith:smith-race
 
-minikube-test-sc: fmt
-	go test -i -tags=integration_sc -race -v ./integration_tests
+minikube-run-sc: fmt update-bazel
 	KUBE_PATCH_CONVERSION_DETECTOR=true \
 	KUBE_CACHE_MUTATION_DETECTOR=true \
 	KUBERNETES_SERVICE_HOST="$$(minikube ip)" \
@@ -62,10 +89,9 @@ minikube-test-sc: fmt
 	KUBERNETES_CA_PATH="$$HOME/.minikube/ca.crt" \
 	KUBERNETES_CLIENT_CERT="$$HOME/.minikube/apiserver.crt" \
 	KUBERNETES_CLIENT_KEY="$$HOME/.minikube/apiserver.key" \
-	SERVICE_CATALOG_URL="http://$$(minikube ip):30080" \
-	go test -tags=integration_sc -race -v ./integration_tests
+	bazel run //cmd/smith:smith-race -- -service-catalog-url="http://$$(minikube ip):30080"
 
-minikube-run: build-all-race
+minikube-sleeper-run: fmt update-bazel
 	KUBE_PATCH_CONVERSION_DETECTOR=true \
 	KUBE_CACHE_MUTATION_DETECTOR=true \
 	KUBERNETES_SERVICE_HOST="$$(minikube ip)" \
@@ -73,33 +99,14 @@ minikube-run: build-all-race
 	KUBERNETES_CA_PATH="$$HOME/.minikube/ca.crt" \
 	KUBERNETES_CLIENT_CERT="$$HOME/.minikube/apiserver.crt" \
 	KUBERNETES_CLIENT_KEY="$$HOME/.minikube/apiserver.key" \
-	go run -race cmd/smith/*.go
+	bazel run //examples/tprattribute/main:main-race
 
-minikube-run-sc: build-all-race
-	KUBE_PATCH_CONVERSION_DETECTOR=true \
-	KUBE_CACHE_MUTATION_DETECTOR=true \
-	KUBERNETES_SERVICE_HOST="$$(minikube ip)" \
-	KUBERNETES_SERVICE_PORT=8443 \
-	KUBERNETES_CA_PATH="$$HOME/.minikube/ca.crt" \
-	KUBERNETES_CLIENT_CERT="$$HOME/.minikube/apiserver.crt" \
-	KUBERNETES_CLIENT_KEY="$$HOME/.minikube/apiserver.key" \
-	go run -race cmd/smith/*.go -service-catalog-url="http://$$(minikube ip):30080"
-
-minikube-sleeper-run: build-all-race
-	KUBE_PATCH_CONVERSION_DETECTOR=true \
-	KUBE_CACHE_MUTATION_DETECTOR=true \
-	KUBERNETES_SERVICE_HOST="$$(minikube ip)" \
-	KUBERNETES_SERVICE_PORT=8443 \
-	KUBERNETES_CA_PATH="$$HOME/.minikube/ca.crt" \
-	KUBERNETES_CLIENT_CERT="$$HOME/.minikube/apiserver.crt" \
-	KUBERNETES_CLIENT_KEY="$$HOME/.minikube/apiserver.key" \
-	go run -race examples/tprattribute/main/*.go
-
-test: fmt
-	go test -i -race $$(glide nv | grep -v integration_tests)
-	KUBE_PATCH_CONVERSION_DETECTOR=true \
-	KUBE_CACHE_MUTATION_DETECTOR=true \
-	go test -race $$(glide nv | grep -v integration_tests)
+test: fmt update-bazel
+	bazel test \
+		--test_output=all \
+		--test_env=KUBE_PATCH_CONVERSION_DETECTOR=true \
+		--test_env=KUBE_CACHE_MUTATION_DETECTOR=true \
+		//pkg/... //examples/... //cmd/...
 
 check: build-all
 	gometalinter --concurrency=$(METALINTER_CONCURRENCY) --deadline=800s ./... --vendor \
@@ -115,29 +122,12 @@ coveralls:
 	goveralls -coverprofile=coverage.out -service=travis-ci
 
 # Compile a static binary. Cannot be used with -race
-docker:
-	docker pull golang:$(GOVERSION)
-	docker run \
-		--rm \
-		-v "$(GOPATH)":"$(GP)" \
-		-w "$(GP)/src/github.com/atlassian/smith" \
-		-e GOPATH="$(GP)" \
-		-e CGO_ENABLED=0 \
-		golang:$(GOVERSION) \
-		go build -o build/bin/linux/$(BINARY_NAME) $(GOBUILD_VERSION_ARGS) -installsuffix cgo $(MAIN_PKG)
-	docker build --pull -t $(IMAGE_NAME):$(GIT_HASH) build
+docker: fmt update-bazel
+	bazel build //cmd/smith:docker
 
 # Compile a binary with -race. Needs to be run on a glibc-based system.
-docker-race:
-	docker pull golang:$(GOVERSION)
-	docker run \
-		--rm \
-		-v "$(GOPATH)":"$(GP)" \
-		-w "$(GP)/src/github.com/atlassian/smith" \
-		-e GOPATH="$(GP)" \
-		golang:$(GOVERSION) \
-		go build -race -o build/bin/linux/$(BINARY_NAME) $(GOBUILD_VERSION_ARGS) -installsuffix cgo $(MAIN_PKG)
-	docker build --pull -t $(IMAGE_NAME):$(GIT_HASH)-race -f build/Dockerfile-glibc build
+docker-race: fmt update-bazel
+	bazel build //cmd/smith:docker-race
 
 release-hash: docker
 	docker push $(IMAGE_NAME):$(GIT_HASH)

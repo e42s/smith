@@ -1,6 +1,4 @@
-// +build integration
-
-package integration_tests
+package it
 
 import (
 	"context"
@@ -65,16 +63,16 @@ func TestAdoption(t *testing.T) {
 			},
 		},
 	}
-	setupApp(t, bundle, false, false, testAdoption, cm, sleeper)
+	SetupApp(t, bundle, false, false, testAdoption, cm, sleeper)
 }
 
-func testAdoption(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...interface{}) {
+func testAdoption(t *testing.T, ctxTest context.Context, cfg *Config, args ...interface{}) {
 	stgr := stager.New()
 	defer stgr.Shutdown()
 	stage := stgr.NextStage()
 	stage.StartWithContext(func(ctx context.Context) {
 		apl := tprattribute.App{
-			RestConfig: cfg.config,
+			RestConfig: cfg.Config,
 		}
 		if e := apl.Run(ctx); e != context.Canceled && e != context.DeadlineExceeded {
 			assert.NoError(t, e)
@@ -84,8 +82,8 @@ func testAdoption(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...
 	cm := args[0].(*api_v1.ConfigMap)
 	sleeper := args[1].(*tprattribute.Sleeper)
 
-	cmClient := cfg.clientset.CoreV1().ConfigMaps(cfg.namespace)
-	sClient, err := tprattribute.GetSleeperTprClient(cfg.config, sleeperScheme())
+	cmClient := cfg.Clientset.CoreV1().ConfigMaps(cfg.Namespace)
+	sClient, err := tprattribute.GetSleeperTprClient(cfg.Config, sleeperScheme())
 	require.NoError(t, err)
 
 	// Create orphaned ConfigMap
@@ -97,7 +95,7 @@ func testAdoption(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...
 	sleeperActual := &tprattribute.Sleeper{}
 	err = sClient.Post().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(tprattribute.SleeperResourcePath).
 		Body(sleeper).
 		Do().
@@ -107,13 +105,13 @@ func testAdoption(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...
 
 	// Create Bundle with same resources
 	bundleActual := &smith.Bundle{}
-	cfg.createObject(ctxTest, cfg.bundle, bundleActual, smith.BundleResourcePath, cfg.bundleClient)
-	cfg.createdBundle = bundleActual
+	cfg.createObject(ctxTest, cfg.Bundle, bundleActual, smith.BundleResourcePath, cfg.BundleClient)
+	cfg.CreatedBundle = bundleActual
 
 	time.Sleep(1 * time.Second) // TODO this should be removed once race with tpr informer is fixed "no informer for tpr.atlassian.com/v1, Kind=Sleeper is registered"
 
 	// Bundle should be in Error=true state
-	obj, err := cfg.store.AwaitObjectCondition(ctxTest, smith.BundleGVK, cfg.namespace, cfg.bundle.Name, isBundleError)
+	obj, err := cfg.Store.AwaitObjectCondition(ctxTest, smith.BundleGVK, cfg.Namespace, cfg.Bundle.Name, isBundleError)
 	require.NoError(t, err)
 	bundleActual = obj.(*smith.Bundle)
 
@@ -152,7 +150,7 @@ func testAdoption(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...
 		})
 		err = sClient.Put().
 			Context(ctxTest).
-			Namespace(cfg.namespace).
+			Namespace(cfg.Namespace).
 			Resource(tprattribute.SleeperResourcePath).
 			Name(sleeperActual.Name).
 			Body(sleeperActual).
@@ -161,7 +159,7 @@ func testAdoption(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...
 		if api_errors.IsConflict(err) {
 			err = sClient.Get().
 				Context(ctxTest).
-				Namespace(cfg.namespace).
+				Namespace(cfg.Namespace).
 				Resource(tprattribute.SleeperResourcePath).
 				Name(sleeperActual.Name).
 				Do().
@@ -174,7 +172,7 @@ func testAdoption(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...
 	}
 
 	// Bundle should reach Ready=true state
-	assertBundle(t, ctxTest, cfg.store, cfg.namespace, cfg.bundle)
+	AssertBundle(t, ctxTest, cfg.Store, cfg.Namespace, cfg.Bundle)
 
 	// ConfigMap should have BlockOwnerDeletion updated
 	cmActual, err = cmClient.Get(cm.Name, meta_v1.GetOptions{})
@@ -193,7 +191,7 @@ func testAdoption(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...
 	// Sleeper should have BlockOwnerDeletion updated
 	err = sClient.Get().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(tprattribute.SleeperResourcePath).
 		Name(sleeperActual.Name).
 		Do().

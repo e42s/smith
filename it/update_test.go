@@ -1,6 +1,4 @@
-// +build integration
-
-package integration_tests
+package it
 
 import (
 	"context"
@@ -137,16 +135,16 @@ func TestUpdate(t *testing.T) {
 			},
 		},
 	}
-	setupApp(t, bundle1, false, true, testUpdate, cm2, sleeper1, sleeper2, bundle2)
+	SetupApp(t, bundle1, false, true, testUpdate, cm2, sleeper1, sleeper2, bundle2)
 }
 
-func testUpdate(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...interface{}) {
+func testUpdate(t *testing.T, ctxTest context.Context, cfg *Config, args ...interface{}) {
 	stgr := stager.New()
 	defer stgr.Shutdown()
 	stage := stgr.NextStage()
 	stage.StartWithContext(func(ctx context.Context) {
 		apl := tprattribute.App{
-			RestConfig: cfg.config,
+			RestConfig: cfg.Config,
 		}
 		if e := apl.Run(ctx); e != context.Canceled && e != context.DeadlineExceeded {
 			assert.NoError(t, e)
@@ -158,27 +156,27 @@ func testUpdate(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...in
 	sleeper2 := args[2].(*tprattribute.Sleeper)
 	bundle2 := args[3].(*smith.Bundle)
 
-	cmClient := cfg.clientset.CoreV1().ConfigMaps(cfg.namespace)
-	sClient, err := tprattribute.GetSleeperTprClient(cfg.config, sleeperScheme())
+	cmClient := cfg.Clientset.CoreV1().ConfigMaps(cfg.Namespace)
+	sClient, err := tprattribute.GetSleeperTprClient(cfg.Config, sleeperScheme())
 	require.NoError(t, err)
 
 	ctxTimeout, cancel := context.WithTimeout(ctxTest, time.Duration(sleeper1.Spec.SleepFor+2)*time.Second)
 	defer cancel()
 
-	bundleRes1 := assertBundle(t, ctxTimeout, cfg.store, cfg.namespace, cfg.bundle, cfg.createdBundle.ResourceVersion)
+	bundleRes1 := AssertBundle(t, ctxTimeout, cfg.Store, cfg.Namespace, cfg.Bundle, cfg.CreatedBundle.ResourceVersion)
 
 	res := &smith.Bundle{}
 	bundle2.ResourceVersion = bundleRes1.ResourceVersion
-	require.NoError(t, cfg.bundleClient.Put().
+	require.NoError(t, cfg.BundleClient.Put().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(smith.BundleResourcePath).
 		Name(bundle2.Name).
 		Body(bundle2).
 		Do().
 		Into(res))
 
-	bundleRes2 := assertBundle(t, ctxTimeout, cfg.store, cfg.namespace, bundle2, bundle2.ResourceVersion, res.ResourceVersion)
+	bundleRes2 := AssertBundle(t, ctxTimeout, cfg.Store, cfg.Namespace, bundle2, bundle2.ResourceVersion, res.ResourceVersion)
 
 	cfMap, err := cmClient.Get(cm2.Name, meta_v1.GetOptions{})
 	require.NoError(t, err)
@@ -186,14 +184,14 @@ func testUpdate(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...in
 		"configLabel":         "configValue",
 		"bundleLabel":         "bundleValue2",
 		"overlappingLabel":    "overlappingConfigValue",
-		smith.BundleNameLabel: cfg.bundle.Name,
+		smith.BundleNameLabel: cfg.Bundle.Name,
 	}, cfMap.Labels)
 	assert.Equal(t, cm2.Data, cfMap.Data)
 
 	var sleeperObj tprattribute.Sleeper
 	err = sClient.Get().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(tprattribute.SleeperResourcePath).
 		Name(sleeper2.Name).
 		Do().
@@ -203,24 +201,24 @@ func testUpdate(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...in
 		"configLabel":         "configValue",
 		"bundleLabel":         "bundleValue2",
 		"overlappingLabel":    "overlappingConfigValue",
-		smith.BundleNameLabel: cfg.bundle.Name,
+		smith.BundleNameLabel: cfg.Bundle.Name,
 	}, sleeperObj.Labels)
 	assert.Equal(t, tprattribute.Awake, sleeperObj.Status.State)
 	assert.Equal(t, sleeper2.Spec, sleeperObj.Spec)
 
-	emptyBundle := *cfg.bundle
+	emptyBundle := *cfg.Bundle
 	emptyBundle.Spec.Resources = []smith.Resource{}
 	emptyBundle.ResourceVersion = bundleRes2.ResourceVersion
-	require.NoError(t, cfg.bundleClient.Put().
+	require.NoError(t, cfg.BundleClient.Put().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(smith.BundleResourcePath).
 		Name(emptyBundle.Name).
 		Body(&emptyBundle).
 		Do().
 		Into(res))
 
-	assertBundleTimeout(t, ctxTest, cfg.store, cfg.namespace, &emptyBundle, emptyBundle.ResourceVersion, res.ResourceVersion)
+	AssertBundleTimeout(t, ctxTest, cfg.Store, cfg.Namespace, &emptyBundle, emptyBundle.ResourceVersion, res.ResourceVersion)
 
 	cfMap, err = cmClient.Get(cm2.Name, meta_v1.GetOptions{})
 	if err == nil {
@@ -230,7 +228,7 @@ func testUpdate(t *testing.T, ctxTest context.Context, cfg *itConfig, args ...in
 	}
 	err = sClient.Get().
 		Context(ctxTest).
-		Namespace(cfg.namespace).
+		Namespace(cfg.Namespace).
 		Resource(tprattribute.SleeperResourcePath).
 		Name(sleeper2.Name).
 		Do().
